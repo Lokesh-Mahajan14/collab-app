@@ -22,15 +22,19 @@ export  default async function ChatLayout({
 
   const conversations = await getUserConversationsAction(workspaceId);
   return (
-    <ChatSocketProvider userId={
-    session?.user?.id ?? ""
-  }>
+    <ChatSocketProvider
+      userId={session?.user?.id ?? ""}
+      workspaceId={workspaceId}
+    >
       <ConversationProvider
     initialConversations={conversations}
   >
     <div className="flex h-[calc(100vh-64px)] flex-col overflow-hidden bg-muted/20 lg:flex-row">
 
-      <ChatSidebar workspaceId={workspaceId} />
+      <ChatSidebar
+        workspaceId={workspaceId}
+        currentUserId={session?.user?.id ?? ""}
+      />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {children}

@@ -90,16 +90,47 @@ export async function findMessageById(
 
 interface GetMessagesOptions {
   conversationId: string;
+  currentUserId: string;
   cursor?: string;
   limit?: number;
 }
 
+export interface PaginatedMessagesResult {
+  messages: any[];
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+
 export async function findConversationMessages({
   conversationId,
+  currentUserId,
   cursor,
   limit = 30,
-}: GetMessagesOptions) {
-  const messages=db.message.findMany({
+}: GetMessagesOptions): Promise<PaginatedMessagesResult> {
+  let effectiveLimit = limit;
+
+  // On initial chat load (no cursor), check how many unread messages the user has
+  if (!cursor && currentUserId) {
+    const unreadCount = await db.message.count({
+      where: {
+        conversationId,
+        senderId: { not: currentUserId },
+        deleted: false,
+        reads: {
+          none: {
+            userId: currentUserId,
+          },
+        },
+      },
+    });
+
+    if (unreadCount > 0) {
+      // Ensure all unread messages + surrounding context are fetched on initial open
+      effectiveLimit = Math.max(limit, Math.min(unreadCount + 10, 100));
+    }
+  }
+
+  const fetched = await db.message.findMany({
     where: {
       conversationId,
     },
@@ -113,10 +144,10 @@ export async function findConversationMessages({
         },
       },
       reads: {
-        select:{
-          userId:true,
-          seenAt:true,
-        }
+        select: {
+          userId: true,
+          seenAt: true,
+        },
       },
       attachments: true,
       
@@ -132,16 +163,16 @@ export async function findConversationMessages({
           attachments: true,
         },
       },
-      reactions:{
-          include:{
-              user:{
-                  select:{
-                      id:true,
-                      name:true,
-                      image:true,
-                  }
-              }
-          }
+      reactions: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              image: true,
+            },
+          },
+        },
       },
     },
 
@@ -149,7 +180,7 @@ export async function findConversationMessages({
       createdAt: "desc",
     },
 
-    take: limit,
+    take: effectiveLimit + 1,
 
     ...(cursor && {
       skip: 1,
@@ -158,7 +189,16 @@ export async function findConversationMessages({
       },
     }),
   });
-  return (await messages).reverse()
+
+  const hasMore = fetched.length > effectiveLimit;
+  const rawItems = hasMore ? fetched.slice(0, effectiveLimit) : fetched;
+  const nextCursor = hasMore && rawItems.length > 0 ? rawItems[rawItems.length - 1].id : null;
+
+  return {
+    messages: rawItems.reverse(),
+    hasMore,
+    nextCursor,
+  };
 }
 
 export async function updateMessage(
@@ -295,6 +335,22 @@ export async function markMessageAsRead(
     update: {
       seenAt: new Date(),
     },
+  });
+}
+
+export async function markMessagesBatchAsRead(
+  messageIds: string[],
+  userId: string
+) {
+  if (!messageIds.length) return { count: 0 };
+
+  return db.messageRead.createMany({
+    data: messageIds.map((messageId) => ({
+      messageId,
+      userId,
+      seenAt: new Date(),
+    })),
+    skipDuplicates: true,
   });
 }
 

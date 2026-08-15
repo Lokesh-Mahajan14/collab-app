@@ -106,53 +106,40 @@ export interface MessageDTO {
   reads: MessageReadDTO[];
 
   reactions: MessageReactionDTO[];
-}
 
-// types/message.ts
+  isFirstUnread?: boolean;
+}
 
 export interface ChatMessage {
   id: string;
-
   conversationId: string;
-
   senderId: string;
-
   sender: {
     id: string;
     name: string | null;
     image?: string | null;
   };
-
   content: string | null;
-
   createdAt: Date;
-
+  type?: MessageType | string;
   edited?: boolean;
-
   editedAt?: Date | null;
-
-  deleted?:boolean;
-
-  deletedAt:Date | null;
-
+  deleted?: boolean;
+  deletedAt?: Date | null;
   replyTo?: {
     id: string;
     content: string | null;
     sender: {
       id: string;
       name: string | null;
+      image?: string | null;
     };
     attachments?: MessageAttachmentDTO[];
   } | null;
-
-  attachments?: MessageAttachmentDTO[];
-
-  reads: MessageReadDTO[];
-
-  reactions: MessageReactionDTO[];
-
-  type:MessageType,
-
+  attachments?: any[];
+  reads?: MessageReadDTO[];
+  reactions?: MessageReactionDTO[];
+  isFirstUnread?: boolean;
   pending?: boolean;
 }
 

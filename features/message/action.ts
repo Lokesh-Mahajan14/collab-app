@@ -15,6 +15,7 @@ import {
   createMessageService,
   deleteMessageService,
   markAsReadService,
+  markMessagesBatchAsReadService,
   toggleReactionService,
   editMessageService,
   createAttachmentMessageService,
@@ -247,7 +248,6 @@ export async function deleteMessageAction(
 export async function markMessageAsReadAction(
   messageId: string
 ) {
-
   const session =
     await getServerSession(authOptions);
 
@@ -259,7 +259,6 @@ export async function markMessageAsReadAction(
   }
 
   try {
-
     await markAsReadService(
       messageId,
       session.user.id
@@ -268,9 +267,7 @@ export async function markMessageAsReadAction(
     return {
       success: true,
     };
-
   } catch (error) {
-
     return {
       success: false,
       message:
@@ -278,9 +275,47 @@ export async function markMessageAsReadAction(
           ? error.message
           : "Something went wrong",
     };
+  }
+}
 
+export async function markMessagesBatchAction(
+  messageIds: string[]
+) {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user?.id) {
+    return {
+      success: false,
+      message: "Unauthorized",
+    };
   }
 
+  if (!messageIds || messageIds.length === 0) {
+    return {
+      success: true,
+      data: { count: 0 },
+    };
+  }
+
+  try {
+    const result = await markMessagesBatchAsReadService(
+      messageIds,
+      session.user.id
+    );
+
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Something went wrong",
+    };
+  }
 }
 
 export async function toggleReactionAction(
@@ -327,7 +362,8 @@ export async function toggleReactionAction(
 
 
 export async function getMessagesAction(
-  conversationId: string
+  conversationId: string,
+  limit = 30
 ) {
   const session =
     await getServerSession(authOptions);
@@ -338,18 +374,28 @@ export async function getMessagesAction(
 
   return findConversationMessages({
     conversationId,
-    limit: 1000,
+    currentUserId: session.user.id,
+    limit,
   });
 }
 
 export async function getOlderMessagesAction(
   conversationId: string,
   cursor: string,
+  limit = 30
 ) {
+  const session =
+    await getServerSession(authOptions);
+
+  if (!session?.user?.id) {
+    throw new Error("Unauthorized");
+  }
+
   return findConversationMessages({
     conversationId,
+    currentUserId: session.user.id,
     cursor,
-    limit: 30,
+    limit,
   });
 }
 

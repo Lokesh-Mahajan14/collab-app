@@ -1,4 +1,5 @@
 import { Server } from "socket.io";
+import { db } from "@/lib/db";
 
 const io = new Server(3001, {
   cors: {
@@ -17,6 +18,17 @@ io.on("connection", (socket) => {
   console.log(
     "Connected:",
     socket.id
+  );
+
+  socket.on(
+    "join_workspace",
+    (workspaceId) => {
+
+      socket.join(
+        `workspace:${workspaceId}`
+      );
+
+    }
   );
 
   socket.on(
@@ -58,12 +70,22 @@ io.on("connection", (socket) => {
       Date.now()
     );
 
-      io.to(
-        conversationId
-      ).emit(
-        "receive_message",
-        message
-      );
+      db.conversation.findUnique({
+        where: {
+          id: conversationId,
+        },
+        select: {
+          workspaceId: true,
+        },
+      }).then((conversation) => {
+        if (!conversation) {
+          return;
+        }
+
+        io.to(`workspace:${conversation.workspaceId}`)
+          .to(conversationId)
+          .emit("receive_message", message);
+      });
 
     }
   );
@@ -151,23 +173,38 @@ io.on("connection", (socket) => {
     userId,
   }) => {
 
-    socket.to(
-      conversationId
-    ).emit(
-      "message_read_update",
-      {
-        messageId,
-        userId,
+    db.conversation.findUnique({
+      where: {
+        id: conversationId,
+      },
+      select: {
+        workspaceId: true,
+      },
+    }).then((conversation) => {
+      if (!conversation) {
+        return;
       }
-    );
 
-    io.to(conversationId).emit(
-      "conversation_unread_updated",
-      {
-        conversationId,
-        userId,
-      }
-    )
+      socket.to(
+        conversationId
+      ).emit(
+        "message_read_update",
+        {
+          messageId,
+          userId,
+        }
+      );
+
+      io.to(
+        `workspace:${conversation.workspaceId}`
+      ).emit(
+        "conversation_unread_updated",
+        {
+          conversationId,
+          userId,
+        }
+      )
+    });
 
   }
 );

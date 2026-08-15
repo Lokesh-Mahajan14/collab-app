@@ -1,15 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import { useCallback, useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { Hash, Lock, Users } from "lucide-react";
-
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-import { useContext, useEffect, useState } from "react";
-import { ConversationDTO } from "@/types/conversation";
+import { MessageAttachmentDTO, MessageDTO } from "@/types/message";
 import { socket } from "@/lib/socket-client";
 import { useConversation } from "./ConversationContext";
+import ConversationListItem from "./ConversationListItem";
 
 interface ConversationListProps {
   workspaceId: string;
@@ -20,53 +16,60 @@ export default function ConversationList({
   workspaceId,
   currentUserId,
 }: ConversationListProps) {
-  function renderLastMessage(message: ConversationDTO["lastMessage"]) {
-    if (!message) return "No messages yet";
-
-    switch (message.type) {
-      case "TEXT":
-        return `${message.sender.name ?? "Unknown"}: ${message.content}`;
-
-      case "IMAGE":
-        return `${message.sender.name ?? "Unknown"}: 📷 Photo`;
-
-      case "FILE":
-        return `${message.sender.name ?? "Unknown"}: 📄 ${
-          message.attachments[0]?.fileName ?? "File"
-        }`;
-
-      default:
-        return `${message.sender.name ?? "Unknown"}: Message`;
-    }
-  }
-
+  const pathname = usePathname();
   const { conversations, setConversations } = useConversation();
+
+  const sortConversations = useCallback((items: typeof conversations) => {
+    return [...items].sort((a, b) => {
+      const aTime = a.lastMessageAt ?? a.createdAt;
+      const bTime = b.lastMessageAt ?? b.createdAt;
+
+      return new Date(bTime).getTime() - new Date(aTime).getTime();
+    });
+  }, []);
+
+  // When active conversation changes or is opened, immediately clear its unread badge
   useEffect(() => {
-    function handleReceiveMessage(message: any) {
+    const activeConversationId = pathname.split("/chat/")[1]?.split("/")[0];
+    if (activeConversationId) {
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeConversationId && c.unreadCount > 0
+            ? { ...c, unreadCount: 0 }
+            : c
+        )
+      );
+    }
+  }, [pathname, setConversations]);
+
+  useEffect(() => {
+    function handleReceiveMessage(message: MessageDTO) {
+      const activeConversationId = pathname.split("/chat/")[1]?.split("/")[0];
+      const isViewingThisConversation = activeConversationId === message.conversationId;
+
       setConversations((prev) => {
+        const normalizedMessage: MessageDTO & {
+          attachments: MessageAttachmentDTO[];
+        } = {
+          ...message,
+          attachments: message.attachments ?? [],
+        };
+
         const updated = prev.map((conversation) =>
           conversation.id === message.conversationId
             ? {
                 ...conversation,
-                lastMessage: message,
-                lastMessageAt: message.createdAt,
-
+                lastMessage: normalizedMessage,
+                lastMessageAt: normalizedMessage.createdAt,
                 unreadCount:
-                  message.senderId === currentUserId
+                  normalizedMessage.senderId === currentUserId || isViewingThisConversation
                     ? conversation.unreadCount
-                    : conversation.unreadCount + 1,
+                    : (conversation.unreadCount || 0) + 1,
               }
             : conversation,
         );
 
-        updated.sort((a, b) => {
-          const aTime = a.lastMessageAt ?? a.createdAt;
-          const bTime = b.lastMessageAt ?? b.createdAt;
-
-          return new Date(bTime).getTime() - new Date(aTime).getTime();
-        });
-
-        return [...updated];
+        return sortConversations(updated);
       });
     }
 
@@ -82,13 +85,15 @@ export default function ConversationList({
       if (userId !== currentUserId) return;
 
       setConversations((prev) =>
-        prev.map((conversation) =>
-          conversation.id === conversationId
-            ? {
-                ...conversation,
-                unreadCount: 0,
-              }
-            : conversation,
+        sortConversations(
+          prev.map((conversation) =>
+            conversation.id === conversationId
+              ? {
+                  ...conversation,
+                  unreadCount: 0,
+                }
+              : conversation,
+          ),
         ),
       );
     }
@@ -102,9 +107,7 @@ export default function ConversationList({
       );
       socket.off("receive_message", handleReceiveMessage);
     };
-  }, [currentUserId]);
-
-  const pathname = usePathname();
+  }, [currentUserId, pathname, setConversations, sortConversations]);
 
   if (!conversations.length) {
     return (
@@ -122,84 +125,13 @@ export default function ConversationList({
   return (
     <>
       {conversations.map((conversation) => {
-        const isActive = pathname.includes(conversation.id);
-        const memberCount = conversation.members?.length ?? 0;
-
-        const isChannel = conversation.type === "CHANNEL";
-        const isPrivateChannel = conversation.type === "PRIVATE_CHANNEL";
-
-        const ConversationIcon = isChannel
-          ? Hash
-          : isPrivateChannel
-            ? Lock
-            : Users;
-
-        const directPeer =
-          conversation.type === "DIRECT"
-            ? conversation.members?.find(
-                (member) => member.userId !== currentUserId,
-              )
-            : null;
-
-        const displayName =
-          conversation.type === "DIRECT"
-            ? (directPeer?.user?.name ?? "Direct message")
-            : (conversation.name ?? "Untitled conversation");
-
         return (
-          <Link
+          <ConversationListItem
             key={conversation.id}
-            href={`/workspace/${workspaceId}/chat/${conversation.id}`}
-            className={cn(
-              "group block rounded-xl border border-transparent px-3 py-2.5 transition-all",
-              "hover:border-border/70 hover:bg-muted/60",
-              isActive && "border-border bg-muted",
-            )}
-          >
-            <div className="flex items-start gap-2.5">
-              <div
-                className={cn(
-                  "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-card text-muted-foreground",
-                  isActive && "bg-primary text-primary-foreground",
-                )}
-              >
-                <ConversationIcon className="h-3.5 w-3.5" />
-              </div>
-
-              <div className="min-w-0 flex-1 space-y-1">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {displayName}
-                </p>
-
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1 flex-1">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>{memberCount} members</span>
-
-                      <span className="inline-block h-1 w-1 rounded-full bg-muted-foreground/60" />
-
-                      <Badge
-                        variant="outline"
-                        className="h-4 rounded-full px-1.5 text-[10px]"
-                      >
-                        {conversation.type.replace("_", " ")}
-                      </Badge>
-                    </div>
-
-                    <p className="truncate text-xs text-muted-foreground">
-                      {renderLastMessage(conversation.lastMessage)}
-                    </p>
-                  </div>
-
-                  {conversation.unreadCount > 0 && (
-                    <Badge className="ml-2 min-w-5 rounded-full px-1.5">
-                      {conversation.unreadCount}
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            </div>
-          </Link>
+            conversation={conversation}
+            workspaceId={workspaceId}
+            currentUserId={currentUserId}
+          />
         );
       })}
     </>

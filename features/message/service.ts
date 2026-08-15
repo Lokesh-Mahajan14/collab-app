@@ -6,6 +6,7 @@ import {
   updateMessage,
   deleteMessage,
   markMessageAsRead,
+  markMessagesBatchAsRead,
   createReaction,
   deleteReaction,
   updateConversationLastMessage,
@@ -282,6 +283,16 @@ export async function markAsReadService(
 ) {
   return markMessageAsRead(
     messageId,
+    currentUserId
+  );
+}
+
+export async function markMessagesBatchAsReadService(
+  messageIds: string[],
+  currentUserId: string
+) {
+  return markMessagesBatchAsRead(
+    messageIds,
     currentUserId
   );
 }

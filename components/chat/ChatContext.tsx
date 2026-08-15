@@ -4,33 +4,36 @@ import { ChatMessage } from "@/types/message";
 import { createContext, useContext, useState } from "react";
 
 interface ChatContextType {
-  messages: ChatMessage[];
+  messages: any[];
   setMessages: React.Dispatch<React.SetStateAction<any[]>>;
-
-  replyingTo: ChatMessage | null;
-
-  setReplyingTo: React.Dispatch<React.SetStateAction<ChatMessage | null>>;
+  hasMore: boolean;
+  setHasMore: React.Dispatch<React.SetStateAction<boolean>>;
+  replyingTo: any | null;
+  setReplyingTo: React.Dispatch<React.SetStateAction<any | null>>;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
 
 export function ChatProvider({
-  initialMessages,
+  initialMessages = [],
+  initialHasMore = false,
   children,
 }: {
   initialMessages: any[];
+  initialHasMore?: boolean;
   children: React.ReactNode;
 }) {
-  const [messages, setMessages] = useState(initialMessages);
-
-  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [messages, setMessages] = useState<any[]>(initialMessages);
+  const [hasMore, setHasMore] = useState<boolean>(initialHasMore);
+  const [replyingTo, setReplyingTo] = useState<any | null>(null);
 
   return (
     <ChatContext.Provider
       value={{
         messages,
         setMessages,
-
+        hasMore,
+        setHasMore,
         replyingTo,
         setReplyingTo,
       }}

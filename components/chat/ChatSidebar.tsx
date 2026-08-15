@@ -1,27 +1,22 @@
+"use client";
 
-import { getUserConversationsAction } from "@/features/conversation/action";
 import Link from "next/link";
 import { MessageSquareText, Plus } from "lucide-react";
-import { getServerSession } from "next-auth";
 
 import { Button } from "@/components/ui/Button";
-import { authOptions } from "@/lib/auth";
+import { useConversation } from "./ConversationContext";
 import ConversationList from "./ConversationList";
-
 
 interface Props {
   workspaceId: string;
+  currentUserId: string;
 }
-export default async function ChatSidebar({
+
+export default function ChatSidebar({
   workspaceId,
+  currentUserId,
 }: Props) {
-
-  const session = await getServerSession(authOptions);
-
-  const conversations =
-    await getUserConversationsAction(
-      workspaceId
-    );
+  const { conversations } = useConversation();
 
   return (
     <aside className="flex h-64 w-full shrink-0 flex-col border-b border-border/70 bg-card/80 lg:h-full lg:w-80 lg:border-b-0 lg:border-r">
@@ -52,9 +47,8 @@ export default async function ChatSidebar({
 
       <div className="flex-1 space-y-3 overflow-y-auto p-3">
         <ConversationList
-          
           workspaceId={workspaceId}
-          currentUserId={session?.user?.id ?? ""}
+          currentUserId={currentUserId}
         />
       </div>
     </aside>

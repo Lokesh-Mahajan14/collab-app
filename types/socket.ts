@@ -1,6 +1,13 @@
 export interface ServerToClientEvents {
   receive_message: (message: any) => void;
 
+  conversation_unread_updated: (
+    payload: {
+      conversationId: string;
+      userId: string;
+    }
+  ) => void;
+
   user_typing: (
     conversationId: string,
     userId: string
@@ -21,6 +28,10 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
+  join_workspace: (
+    workspaceId: string
+  ) => void;
+
   join_conversation: (
     conversationId: string
   ) => void;

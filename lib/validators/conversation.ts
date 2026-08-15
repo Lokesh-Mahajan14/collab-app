@@ -34,3 +34,14 @@ export const createConversationSchema = z.object({
         });
     }
 });
+
+export const renameConversationSchema = z.object({
+    workspaceId: z.string().min(1),
+    conversationId: z.string().min(1),
+    name: z.string().trim().max(120),
+});
+
+export const deleteConversationSchema = z.object({
+    workspaceId: z.string().min(1),
+    conversationId: z.string().min(1),
+});

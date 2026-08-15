@@ -1,5 +1,96 @@
 import crypto from "crypto";
 
+import { db } from "@/lib/db";
+
+export type WorkspaceSidebarItem = {
+  id: string;
+  name: string;
+  role: "OWNER" | "ADMIN" | "MEMBER";
+  memberCount: number;
+  unreadMessageCount: number;
+};
+
+export async function getWorkspaceSidebarItems(userId: string): Promise<WorkspaceSidebarItem[]> {
+  const memberships = await db.workspaceMember.findMany({
+    where: { userId },
+    select: {
+      role: true,
+      workspace: {
+        select: {
+          id: true,
+          name: true,
+          _count: {
+            select: { members: true },
+          },
+          conversations: {
+            where: {
+              members: {
+                some: { userId },
+              },
+            },
+            select: {
+              id: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
+  const allConversationIds: string[] = [];
+  const workspaceConversationMap = new Map<string, string[]>();
+
+  for (const membership of memberships) {
+    const convIds = membership.workspace.conversations.map((c) => c.id);
+    workspaceConversationMap.set(membership.workspace.id, convIds);
+    allConversationIds.push(...convIds);
+  }
+
+  const unreadCountByConv = new Map<string, number>();
+
+  if (allConversationIds.length > 0) {
+    const unreadGroups = await db.message.groupBy({
+      by: ["conversationId"],
+      where: {
+        conversationId: { in: allConversationIds },
+        senderId: { not: userId },
+        deleted: false,
+        reads: {
+          none: {
+            userId,
+          },
+        },
+      },
+      _count: {
+        id: true,
+      },
+    });
+
+    for (const group of unreadGroups) {
+      unreadCountByConv.set(group.conversationId, group._count.id);
+    }
+  }
+
+  return memberships.map((membership) => {
+    const convIds = workspaceConversationMap.get(membership.workspace.id) ?? [];
+    let unreadMessageCount = 0;
+    for (const id of convIds) {
+      unreadMessageCount += unreadCountByConv.get(id) ?? 0;
+    }
+
+    return {
+      id: membership.workspace.id,
+      name: membership.workspace.name,
+      role: membership.role,
+      memberCount: membership.workspace._count.members,
+      unreadMessageCount,
+    };
+  });
+}
+
 export function createWorkspaceSlug(name: string) {
   const base = name
     .toLowerCase()

@@ -60,7 +60,8 @@ export default function MessageBubble({ message, currentUserId }: Props) {
       prev.map((msg) => {
         if (msg.id !== message.id) return msg;
 
-        const alreadyReacted = msg.reactions.some(
+        const currentReactions = msg.reactions ?? [];
+        const alreadyReacted = currentReactions.some(
           (reaction: { userId: string; emoji: string }) =>
             reaction.userId === currentUserId && reaction.emoji === emoji,
         );
@@ -68,38 +69,38 @@ export default function MessageBubble({ message, currentUserId }: Props) {
         return {
           ...msg,
           reactions: alreadyReacted
-            ? msg.reactions.filter(
+            ? currentReactions.filter(
                 (reaction: { userId: string; emoji: string }) =>
                   !(reaction.userId === currentUserId && reaction.emoji === emoji),
               )
             : [
-                ...msg.reactions,
+                ...currentReactions,
                 {
                   id: crypto.randomUUID(),
                   userId: currentUserId,
                   emoji,
+                  user: {
+                    id: currentUserId,
+                    name: null,
+                    image: null,
+                  },
                 },
               ],
         };
       }),
     );
 
-    const result = await toggleReactionAction({
+    socket.emit("reaction", {
+      conversationId: message.conversationId,
       messageId: message.id,
+      userId: currentUserId,
       emoji,
     });
 
-    if (!result.success || !result.data) {
-      return;
-    }
-
-    const updatedMessage = result.data;
-
-    socket.emit("message_reaction", message.conversationId, updatedMessage);
-
-    setMessages((prev) =>
-      prev.map((msg) => (msg.id === updatedMessage.id ? updatedMessage : msg)),
-    );
+    await toggleReactionAction({
+      messageId: message.id,
+      emoji,
+    });
   }
 
   const [open, setOpen] = useState(false);
@@ -400,11 +401,11 @@ export default function MessageBubble({ message, currentUserId }: Props) {
             )}
           </div>
 
-          {message.reactions.length > 0 && !message.deleted && (
+          {(message.reactions?.length ?? 0) > 0 && !message.deleted && (
             <div className={`mt-2 flex ${own ? "justify-end" : "justify-start"}`}>
               <ReactionBar
                 currentUserId={currentUserId}
-                reactions={message.reactions}
+                reactions={message.reactions ?? []}
                 onReact={handleReaction}
               />
             </div>

@@ -85,38 +85,37 @@ export async function findUserConversations(
     return bTime.getTime() - aTime.getTime();
   });
 
-  const conversationsWithUnread = await Promise.all(
-  conversations.map(async (conversation) => {
-    const unreadCount = await db.message.count({
-      where: {
-        conversationId: conversation.id,
+  const conversationIds = conversations.map((c) => c.id);
+  if (conversationIds.length === 0) {
+    return [];
+  }
 
-        senderId: {
-          not: userId,
-        },
-
-        deleted: false,
-
-        reads: {
-          none: {
-            userId,
-          },
+  const unreadGroups = await db.message.groupBy({
+    by: ["conversationId"],
+    where: {
+      conversationId: { in: conversationIds },
+      senderId: { not: userId },
+      deleted: false,
+      reads: {
+        none: {
+          userId,
         },
       },
-    });
+    },
+    _count: {
+      id: true,
+    },
+  });
 
-    return {
-      ...conversation,
-      unreadCount,
-    };
-  })
-);
+  const unreadMap = new Map<string, number>();
+  for (const group of unreadGroups) {
+    unreadMap.set(group.conversationId, group._count.id);
+  }
 
-return conversationsWithUnread;
-
-
-
- 
+  return conversations.map((conversation) => ({
+    ...conversation,
+    unreadCount: unreadMap.get(conversation.id) ?? 0,
+  }));
 }
 export async function createConversation(data: Prisma.ConversationCreateInput) {
   return db.conversation.create({

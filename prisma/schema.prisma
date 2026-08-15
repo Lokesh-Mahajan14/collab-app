@@ -31,6 +31,11 @@ enum WorkspaceInviteStatus {
   CANCELED
 }
 
+enum WorkspaceDocumentType {
+  FILE
+  LINK
+}
+
 model User {
   id            String     @id @default(cuid())
   name          String?
@@ -49,6 +54,7 @@ model User {
   workspaces            WorkspaceMember[]
   createdWorkspaces     Workspace[]          @relation("WorkspaceCreator")
   workspaceInvitesSent  WorkspaceInvite[]    @relation("WorkspaceInviteSender")
+  workspaceDocuments    WorkspaceDocument[]   @relation("WorkspaceDocumentUploader")
   createdTasks          Task[]               @relation("TaskCreator")
   assignedTasks         Task[]               @relation("TaskAssignee")
   taskNotes             TaskNote[]
@@ -76,6 +82,7 @@ model Workspace {
   invites       WorkspaceInvite[]
   tasks         Task[]
   conversations Conversation[]
+  documents     WorkspaceDocument[]
 
   @@index([createdById])
 }
@@ -110,6 +117,27 @@ model WorkspaceInvite {
 
   @@index([workspaceId, status])
   @@index([email, status])
+}
+
+model WorkspaceDocument {
+  id          String               @id @default(cuid())
+  workspaceId String
+  uploadedById String
+  type        WorkspaceDocumentType @default(FILE)
+  title       String
+  url         String
+  fileName    String?
+  publicId    String?
+  mimeType    String?
+  size        Int?
+  createdAt   DateTime             @default(now())
+
+  workspace   Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploadedBy  User                 @relation("WorkspaceDocumentUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([uploadedById])
+  @@index([type])
 }
 
 model Account {
@@ -309,6 +337,8 @@ model Message {
   @@index([conversationId])
   @@index([senderId])
   @@index([createdAt])
+  @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([conversationId, senderId, deleted])
 }
 
 model MessageAttachment {
@@ -347,6 +377,7 @@ model MessageRead {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([messageId, userId])
+  @@index([userId, seenAt])
 }
 
 model MessageReaction {

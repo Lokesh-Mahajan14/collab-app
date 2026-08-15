@@ -72,7 +72,7 @@ async function validateMembers(
 async function findExistingDirectConversation(
   workspaceId: string,
   memberIds: string[],
-) {
+): Promise<{ id: string } | null> {
   const conversations = await db.conversation.findMany({
     where: {
       workspaceId,
@@ -85,20 +85,22 @@ async function findExistingDirectConversation(
     },
   });
 
-  return conversations.find((conversation) => {
+  const existingConversation = conversations.find((conversation) => {
     const ids = conversation.members.map((m) => m.userId).sort();
 
     const target = [...memberIds].sort();
 
     return JSON.stringify(ids) === JSON.stringify(target);
   });
+
+  return existingConversation ? { id: existingConversation.id } : null;
 }
 
 export async function createConversationService(
   dto: CreateConversationDTO,
 
   currentUserId: string,
-) {
+): Promise<NonNullable<Awaited<ReturnType<typeof findConversationById>>>> {
   await validateWorkspace(dto.workspaceId);
 
   await validateMember(dto.workspaceId, currentUserId);
@@ -142,7 +144,13 @@ export async function createConversationService(
 
     if(existing){
 
-        return existing;
+        const refreshedExisting = await findConversationById(existing.id);
+
+        if (!refreshedExisting) {
+          throw new ConversationServiceError("Conversation not found.");
+        }
+
+        return refreshedExisting;
 
     }
 
@@ -156,7 +164,7 @@ export async function createConversationService(
     ...new Set(allMembers),
   ];
 
-  return createConversationWithMembers(
+  const createdConversation = await createConversationWithMembers(
     {
       workspace: {
         connect: {
@@ -174,6 +182,16 @@ export async function createConversationService(
     uniqueMembers
   );
 
+  const refreshedConversation = await findConversationById(
+    createdConversation.id,
+  );
+
+  if (!refreshedConversation) {
+    throw new ConversationServiceError("Conversation not found.");
+  }
+
+  return refreshedConversation;
+
 
 }
 
@@ -181,7 +199,7 @@ export async function renameConversation(
 
     id:string,
 
-    name:string
+  name:string | null
 
 ){
 

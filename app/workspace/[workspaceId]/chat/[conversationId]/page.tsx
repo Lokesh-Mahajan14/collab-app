@@ -1,4 +1,3 @@
-import ChatLayout from "@/components/chat/ChatLayout";
 import ChatHeader from "@/components/chat/ChatHeader";
 import ChatMessages from "@/components/chat/ChatMessages";
 import ChatInput from "@/components/chat/ChatInput";
@@ -16,45 +15,31 @@ export default async function ConversationPage({
     conversationId: string;
   }>;
 }) {
-  const {
-    workspaceId,
-    conversationId,
-  } = await params;
+  const { conversationId } = await params;
 
-  const session =
-  await getServerSession(authOptions);
+  const session = await getServerSession(authOptions);
 
-  const messages =
-  await getMessagesAction(
-    conversationId
-  );
+  // Optimized initial load (limit = 30)
+  const messagesData = await getMessagesAction(conversationId, 30);
 
   return (
-    <ChatLayout workspaceId={workspaceId}>
+    <>
+      <ConversationRoom conversationId={conversationId} />
+      <ChatHeader conversationId={conversationId} />
 
-      <ConversationRoom
-        conversationId={conversationId}
-      />
-
-      <ChatHeader
-        conversationId={conversationId}
-      />
-
-      <ChatProvider initialMessages={messages}>
-        <ChatMessages
-        conversationId={conversationId}
-      />
-
-      <ChatInput
-        conversationId={conversationId}
-        currentUser={{
-          id:session?.user?.id ?? "",
-          name:session?.user?.name ??"",
-        }}
-      />
-
+      <ChatProvider
+        initialMessages={messagesData.messages}
+        initialHasMore={messagesData.hasMore}
+      >
+        <ChatMessages conversationId={conversationId} />
+        <ChatInput
+          conversationId={conversationId}
+          currentUser={{
+            id: session?.user?.id ?? "",
+            name: session?.user?.name ?? "",
+          }}
+        />
       </ChatProvider>
-
-    </ChatLayout>
+    </>
   );
 }

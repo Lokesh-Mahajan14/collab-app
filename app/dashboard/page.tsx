@@ -1,185 +1,319 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
+import Link from "next/link";
+import {
+  FolderKanban,
+  CheckSquare,
+  MessageSquare,
+  FileText,
+  BarChart3,
+  Users,
+  Settings,
+  Plus,
+  ArrowRight,
+  Sparkles,
+  Clock,
+  CheckCircle2,
+} from "lucide-react";
 
+import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
+import { Topbar } from "@/components/layout/Topbar";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { Sidebar } from "@/components/layout/Sidebar";
-import { Topbar } from "@/components/layout/Topbar";
+import { getWorkspaceSidebarItems } from "@/lib/workspace";
+import { Button } from "@/components/ui/Button";
 
 type DashboardPageProps = {
-	searchParams?: Promise<{
-		workspace?: string;
-		new?: string;
-	}>;
+  searchParams?: Promise<{
+    workspace?: string;
+    new?: string;
+  }>;
 };
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
-	const session = await getServerSession(authOptions);
-	const resolvedSearchParams = await searchParams;
+  const session = await getServerSession(authOptions);
+  const resolvedSearchParams = await searchParams;
 
-	if (!session?.user?.id || !session.user.email) {
-		redirect("/auth/login");
-	}
+  if (!session?.user?.id || !session.user.email) {
+    redirect("/auth/login");
+  }
 
-	const memberships = await db.workspaceMember.findMany({
-		where: { userId: session.user.id },
-		select: {
-			role: true,
-			workspace: {
-				select: {
-					id: true,
-					name: true,
-					_count: {
-						select: { members: true },
-					},
-				},
-			},
-		},
-		orderBy: {
-			createdAt: "asc",
-		},
-	});
+  const workspaceOptions = await getWorkspaceSidebarItems(session.user.id);
 
-	const workspaceOptions = memberships.map((membership) => ({
-		id: membership.workspace.id,
-		name: membership.workspace.name,
-		role: membership.role,
-		memberCount: membership.workspace._count.members,
-	}));
+  const selectedWorkspaceId =
+    resolvedSearchParams?.workspace && workspaceOptions.some((workspace) => workspace.id === resolvedSearchParams.workspace)
+      ? resolvedSearchParams.workspace
+      : workspaceOptions[0]?.id;
 
-	const selectedWorkspaceId =
-		resolvedSearchParams?.workspace && workspaceOptions.some((workspace) => workspace.id === resolvedSearchParams.workspace)
-			? resolvedSearchParams.workspace
-			: workspaceOptions[0]?.id;
+  const selectedWorkspace = selectedWorkspaceId
+    ? await db.workspace.findUnique({
+        where: { id: selectedWorkspaceId },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          members: {
+            select: {
+              role: true,
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                },
+              },
+            },
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+          tasks: {
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              priority: true,
+              dueDate: true,
+            },
+            orderBy: {
+              createdAt: "desc",
+            },
+            take: 5,
+          },
+          invites: {
+            where: { status: "PENDING", expiresAt: { gt: new Date() } },
+            select: {
+              id: true,
+              email: true,
+              createdAt: true,
+              expiresAt: true,
+            },
+            orderBy: {
+              createdAt: "desc",
+            },
+          },
+          _count: {
+            select: {
+              tasks: true,
+              members: true,
+              documents: true,
+              conversations: true,
+            },
+          },
+        },
+      })
+    : null;
 
-	const selectedWorkspace = selectedWorkspaceId
-		? await db.workspace.findUnique({
-				where: { id: selectedWorkspaceId },
-				select: {
-					id: true,
-					name: true,
-					members: {
-						select: {
-							role: true,
-							user: {
-								select: {
-									id: true,
-									name: true,
-									email: true,
-								},
-							},
-						},
-						orderBy: {
-							createdAt: "asc",
-						},
-					},
-					invites: {
-						where: { status: "PENDING", expiresAt: { gt: new Date() } },
-						select: {
-							id: true,
-							email: true,
-							createdAt: true,
-							expiresAt: true,
-						},
-						orderBy: {
-							createdAt: "desc",
-						},
-					},
-				},
-			})
-		: null;
+  return (
+    <WorkspaceShell
+      workspaces={workspaceOptions}
+      currentWorkspaceId={selectedWorkspaceId}
+      userName={session.user.name ?? "User"}
+      userEmail={session.user.email}
+      openCreateByDefault={resolvedSearchParams?.new === "workspace"}
+    >
+      <Topbar
+        workspaceName={selectedWorkspace?.name}
+        workspaceId={selectedWorkspaceId}
+        currentPageTitle="Dashboard"
+      />
 
-	return (
-		<main className="min-h-screen bg-background">
-			<div className="flex min-h-screen">
-				<Sidebar
-					workspaces={workspaceOptions}
-					currentWorkspaceId={selectedWorkspaceId}
-					userName={session.user.name ?? "User"}
-					userEmail={session.user.email}
-					openCreateByDefault={resolvedSearchParams?.new === "workspace"}
-				/>
+      <div className="flex-1 p-6 space-y-6 max-w-7xl w-full mx-auto">
+        {selectedWorkspace ? (
+          <div className="space-y-6">
+            {/* Welcome banner */}
+            <section className="rounded-3xl border border-border/80 bg-card p-6 md:p-8 shadow-xs relative overflow-hidden">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                      <Sparkles className="w-4 h-4" />
+                    </span>
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Workspace Hub
+                    </p>
+                  </div>
+                  <h1 className="mt-2 text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+                    Welcome to {selectedWorkspace.name}
+                  </h1>
+                  <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
+                    {selectedWorkspace.description ||
+                      "Collaborate on tasks, coordinate projects, discuss in real-time channels, and organize documents."}
+                  </p>
+                </div>
 
-				<div className="flex min-w-0 flex-1 flex-col">
-					<Topbar workspaceName={selectedWorkspace?.name} />
+                <div className="flex items-center gap-3 shrink-0">
+                  <Button asChild className="gap-2 shadow-xs text-xs h-9">
+                    <Link href={`/workspace/${selectedWorkspace.id}/projects`}>
+                      <FolderKanban className="w-4 h-4" />
+                      View Projects
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </section>
 
-					<div className="flex-1 p-6">
-						{selectedWorkspace ? (
-							<div className="space-y-6">
-								<section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-									<p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-										Workspace Overview
-									</p>
-									<h1 className="mt-2 text-3xl font-semibold tracking-tight">
-										{selectedWorkspace.name}
-									</h1>
-									<p className="mt-2 text-sm text-muted-foreground">
-										Create a workspace from the sidebar, then invite members by email. Accepted invites are automatically added to this workspace.
-									</p>
-								</section>
+            {/* Quick Navigation Cards */}
+            <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Link
+                href={`/workspace/${selectedWorkspace.id}/projects`}
+                className="group rounded-2xl border border-border/70 bg-card p-5 shadow-xs hover:border-primary/50 hover:bg-muted/40 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
+                    <FolderKanban className="w-5 h-5" />
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
+                </div>
+                <h3 className="mt-3 text-sm font-semibold text-foreground">Projects Board</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {selectedWorkspace._count.tasks} total task(s) on board
+                </p>
+              </Link>
 
-								<section className="grid gap-6 lg:grid-cols-2">
-									<div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-										<h2 className="text-lg font-semibold">Members</h2>
-										<p className="mt-1 text-sm text-muted-foreground">
-											{selectedWorkspace.members.length} member(s) in this workspace
-										</p>
-										<div className="mt-4 space-y-3">
-											{selectedWorkspace.members.map((member) => (
-												<div
-													key={member.user.id}
-													className="flex items-center justify-between rounded-xl border border-border/80 bg-background px-3 py-2"
-												>
-													<div>
-														<p className="text-sm font-medium">{member.user.name ?? "Unnamed user"}</p>
-														<p className="text-xs text-muted-foreground">{member.user.email}</p>
-													</div>
-													<span className="rounded-full bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
-														{member.role}
-													</span>
-												</div>
-											))}
-										</div>
-									</div>
+              <Link
+                href={`/workspace/${selectedWorkspace.id}/tasks?mine=true`}
+                className="group rounded-2xl border border-border/70 bg-card p-5 shadow-xs hover:border-primary/50 hover:bg-muted/40 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                    <CheckSquare className="w-5 h-5" />
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
+                </div>
+                <h3 className="mt-3 text-sm font-semibold text-foreground">My Assigned Tasks</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  View and manage your tasks
+                </p>
+              </Link>
 
-									<div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-										<h2 className="text-lg font-semibold">Pending Invitations</h2>
-										<p className="mt-1 text-sm text-muted-foreground">
-											{selectedWorkspace.invites.length} pending invitation(s)
-										</p>
-										<div className="mt-4 space-y-3">
-											{selectedWorkspace.invites.length === 0 ? (
-												<p className="rounded-xl border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
-													No pending invitations yet.
-												</p>
-											) : (
-												selectedWorkspace.invites.map((invite) => (
-													<div
-														key={invite.id}
-														className="rounded-xl border border-border/80 bg-background px-3 py-2"
-													>
-														<p className="text-sm font-medium">{invite.email}</p>
-														<p className="text-xs text-muted-foreground">
-															Expires on {invite.expiresAt.toLocaleDateString()}
-														</p>
-													</div>
-												))
-											)}
-										</div>
-									</div>
-								</section>
-							</div>
-						) : (
-							<section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-								<h1 className="text-2xl font-semibold">Create your first workspace</h1>
-								<p className="mt-2 text-sm text-muted-foreground">
-									Use the workspace switcher in the sidebar and click New workspace to get started.
-								</p>
-							</section>
-						)}
-					</div>
-				</div>
-			</div>
-		</main>
-	);
+              <Link
+                href={`/workspace/${selectedWorkspace.id}/chat`}
+                className="group rounded-2xl border border-border/70 bg-card p-5 shadow-xs hover:border-primary/50 hover:bg-muted/40 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-violet-500/10 text-violet-600 flex items-center justify-center">
+                    <MessageSquare className="w-5 h-5" />
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
+                </div>
+                <h3 className="mt-3 text-sm font-semibold text-foreground">Team Messages</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {selectedWorkspace._count.conversations} active conversation(s)
+                </p>
+              </Link>
+
+              <Link
+                href={`/workspace/${selectedWorkspace.id}/files`}
+                className="group rounded-2xl border border-border/70 bg-card p-5 shadow-xs hover:border-primary/50 hover:bg-muted/40 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
+                </div>
+                <h3 className="mt-3 text-sm font-semibold text-foreground">Workspace Files</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {selectedWorkspace._count.documents} document(s) uploaded
+                </p>
+              </Link>
+            </section>
+
+            {/* Members & Recent Tasks */}
+            <section className="grid gap-6 lg:grid-cols-2">
+              {/* Members */}
+              <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-base font-semibold text-foreground">Members</h2>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedWorkspace.members.length} member(s) in this workspace
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" asChild className="text-xs h-8">
+                    <Link href={`/dashboard/members?workspace=${selectedWorkspace.id}`}>
+                      View all
+                    </Link>
+                  </Button>
+                </div>
+
+                <div className="space-y-2.5 max-h-60 overflow-y-auto">
+                  {selectedWorkspace.members.map((member) => (
+                    <div
+                      key={member.user.id}
+                      className="flex items-center justify-between rounded-xl border border-border/60 bg-background/80 px-3.5 py-2.5"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs">
+                          {member.user.name ? member.user.name.slice(0, 1).toUpperCase() : "U"}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{member.user.name ?? "User"}</p>
+                          <p className="text-[11px] text-muted-foreground">{member.user.email}</p>
+                        </div>
+                      </div>
+                      <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {member.role}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Pending Invitations */}
+              <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-xs">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-base font-semibold text-foreground">Pending Invitations</h2>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedWorkspace.invites.length} pending invitation(s)
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" asChild className="text-xs h-8">
+                    <Link href={`/dashboard/members?workspace=${selectedWorkspace.id}`}>
+                      Manage
+                    </Link>
+                  </Button>
+                </div>
+
+                <div className="space-y-2.5 max-h-60 overflow-y-auto">
+                  {selectedWorkspace.invites.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-border/80 px-4 py-8 text-center text-xs text-muted-foreground">
+                      No pending invitations. Invite colleagues using the sidebar.
+                    </div>
+                  ) : (
+                    selectedWorkspace.invites.map((invite) => (
+                      <div
+                        key={invite.id}
+                        className="flex items-center justify-between rounded-xl border border-border/60 bg-background/80 px-3.5 py-2.5 text-xs"
+                      >
+                        <p className="font-medium text-foreground">{invite.email}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Expires {invite.expiresAt.toLocaleDateString()}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : (
+          <section className="rounded-3xl border border-border/80 bg-card p-12 text-center shadow-xs">
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-4">
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              Create your first workspace
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto">
+              Set up a dedicated workspace to collaborate with teammates, organize project tasks, and start conversations.
+            </p>
+          </section>
+        )}
+      </div>
+    </WorkspaceShell>
+  );
 }
