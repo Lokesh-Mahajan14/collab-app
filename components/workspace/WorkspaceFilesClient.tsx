@@ -83,6 +83,7 @@ export default function WorkspaceFilesClient({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isSavingLink, setIsSavingLink] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [localDocuments, setLocalDocuments] = useState(documents);
 
   useEffect(() => {
@@ -143,29 +144,32 @@ export default function WorkspaceFilesClient({
   }
 
   const handleDelete = async (documentId: string) => {
-  if (!documentId) {
-    toast.error("Document ID is missing");
-    return;
-  }
+    if (!documentId) {
+      toast.error("Document ID is missing");
+      return;
+    }
 
-  try {
-    await axios.delete(
-      `/api/workspaces/${workspaceId}/documents/${documentId}`,
-    );
+    setDeletingId(documentId);
+    try {
+      await axios.delete(
+        `/api/workspaces/${workspaceId}/documents/${documentId}`,
+      );
 
-    toast.success("Document deleted successfully");
+      toast.success("Document deleted successfully");
 
-    setLocalDocuments((currentDocuments) =>
-      currentDocuments.filter((document) => document.id !== documentId),
-    );
-  } catch (error) {
-    toast.error(
-      axios.isAxiosError(error)
-        ? error.response?.data?.error ?? "Failed to delete document"
-        : "Failed to delete document",
-    );
-  }
-};
+      setLocalDocuments((currentDocuments) =>
+        currentDocuments.filter((document) => document.id !== documentId),
+      );
+    } catch (error) {
+      toast.error(
+        axios.isAxiosError(error)
+          ? error.response?.data?.error ?? "Failed to delete document"
+          : "Failed to delete document",
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   async function handleCreateLink(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -475,9 +479,18 @@ export default function WorkspaceFilesClient({
                           <Button
                             size="sm"
                             variant="destructive"
+                            disabled={deletingId === document.id}
                             onClick={() => handleDelete(document.id)}
+                            className="gap-1.5"
                           >
-                            Delete
+                            {deletingId === document.id ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Deleting...
+                              </>
+                            ) : (
+                              "Delete"
+                            )}
                           </Button>
                         )}
                         {document.type === "FILE" ? (

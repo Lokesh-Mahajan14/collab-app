@@ -14,6 +14,48 @@ type MembersPageProps = {
   }>;
 };
 
+async function getMembersWorkspaceData(workspaceId: string) {
+  return db.workspace.findUnique({
+    where: { id: workspaceId },
+    select: {
+      id: true,
+      name: true,
+      createdById: true,
+      members: {
+        select: {
+          id: true,
+          role: true,
+          joinedAt: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+              status: true,
+            },
+          },
+        },
+        orderBy: {
+          joinedAt: "asc",
+        },
+      },
+      invites: {
+        where: { status: "PENDING", expiresAt: { gt: new Date() } },
+        select: {
+          id: true,
+          email: true,
+          createdAt: true,
+          expiresAt: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      },
+    },
+  });
+}
+
 export default async function MembersPage({ searchParams }: MembersPageProps) {
   const session = await getServerSession(authOptions);
   const resolvedSearchParams = await searchParams;
@@ -22,54 +64,25 @@ export default async function MembersPage({ searchParams }: MembersPageProps) {
     redirect("/auth/login");
   }
 
-  const workspaceOptions = await getWorkspaceSidebarItems(session.user.id);
+  const requestedWorkspaceId = resolvedSearchParams?.workspace;
+
+  // Run sidebar items and requested workspace queries concurrently
+  const [workspaceOptions, requestedWorkspace] = await Promise.all([
+    getWorkspaceSidebarItems(session.user.id),
+    requestedWorkspaceId ? getMembersWorkspaceData(requestedWorkspaceId) : Promise.resolve(null),
+  ]);
 
   const selectedWorkspaceId =
-    resolvedSearchParams?.workspace && workspaceOptions.some((w) => w.id === resolvedSearchParams.workspace)
-      ? resolvedSearchParams.workspace
+    requestedWorkspaceId && workspaceOptions.some((w) => w.id === requestedWorkspaceId)
+      ? requestedWorkspaceId
       : workspaceOptions[0]?.id;
 
-  const workspace = selectedWorkspaceId
-    ? await db.workspace.findUnique({
-        where: { id: selectedWorkspaceId },
-        select: {
-          id: true,
-          name: true,
-          createdById: true,
-          members: {
-            select: {
-              id: true,
-              role: true,
-              joinedAt: true,
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                  image: true,
-                  status: true,
-                },
-              },
-            },
-            orderBy: {
-              joinedAt: "asc",
-            },
-          },
-          invites: {
-            where: { status: "PENDING", expiresAt: { gt: new Date() } },
-            select: {
-              id: true,
-              email: true,
-              createdAt: true,
-              expiresAt: true,
-            },
-            orderBy: {
-              createdAt: "desc",
-            },
-          },
-        },
-      })
-    : null;
+  const workspace =
+    selectedWorkspaceId === requestedWorkspaceId
+      ? requestedWorkspace
+      : selectedWorkspaceId
+      ? await getMembersWorkspaceData(selectedWorkspaceId)
+      : null;
 
   const currentMembership = workspace?.members.find((m) => m.user.id === session.user.id);
   const isOwnerOrAdmin =

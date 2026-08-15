@@ -23,12 +23,83 @@ import { db } from "@/lib/db";
 import { getWorkspaceSidebarItems } from "@/lib/workspace";
 import { Button } from "@/components/ui/Button";
 
+import { getCached, setCached } from "@/lib/redis";
+
 type DashboardPageProps = {
   searchParams?: Promise<{
     workspace?: string;
     new?: string;
   }>;
 };
+
+async function getDashboardWorkspace(workspaceId: string) {
+  const cacheKey = `dashboard:workspace:${workspaceId}`;
+  const cached = await getCached<any>(cacheKey);
+  if (cached) return cached;
+
+  const data = await db.workspace.findUnique({
+    where: { id: workspaceId },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      members: {
+        select: {
+          role: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+      tasks: {
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          priority: true,
+          dueDate: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 5,
+      },
+      invites: {
+        where: { status: "PENDING", expiresAt: { gt: new Date() } },
+        select: {
+          id: true,
+          email: true,
+          createdAt: true,
+          expiresAt: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      },
+      _count: {
+        select: {
+          tasks: true,
+          members: true,
+          documents: true,
+          conversations: true,
+        },
+      },
+    },
+  });
+
+  if (data) {
+    await setCached(cacheKey, data, 30);
+  }
+
+  return data;
+}
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const session = await getServerSession(authOptions);
@@ -38,71 +109,25 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     redirect("/auth/login");
   }
 
-  const workspaceOptions = await getWorkspaceSidebarItems(session.user.id);
+  const requestedWorkspaceId = resolvedSearchParams?.workspace;
+
+  // Run sidebar items and requested workspace concurrently
+  const [workspaceOptions, requestedWorkspace] = await Promise.all([
+    getWorkspaceSidebarItems(session.user.id),
+    requestedWorkspaceId ? getDashboardWorkspace(requestedWorkspaceId) : Promise.resolve(null),
+  ]);
 
   const selectedWorkspaceId =
-    resolvedSearchParams?.workspace && workspaceOptions.some((workspace) => workspace.id === resolvedSearchParams.workspace)
-      ? resolvedSearchParams.workspace
+    requestedWorkspaceId && workspaceOptions.some((w) => w.id === requestedWorkspaceId)
+      ? requestedWorkspaceId
       : workspaceOptions[0]?.id;
 
-  const selectedWorkspace = selectedWorkspaceId
-    ? await db.workspace.findUnique({
-        where: { id: selectedWorkspaceId },
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          members: {
-            select: {
-              role: true,
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                },
-              },
-            },
-            orderBy: {
-              createdAt: "asc",
-            },
-          },
-          tasks: {
-            select: {
-              id: true,
-              title: true,
-              status: true,
-              priority: true,
-              dueDate: true,
-            },
-            orderBy: {
-              createdAt: "desc",
-            },
-            take: 5,
-          },
-          invites: {
-            where: { status: "PENDING", expiresAt: { gt: new Date() } },
-            select: {
-              id: true,
-              email: true,
-              createdAt: true,
-              expiresAt: true,
-            },
-            orderBy: {
-              createdAt: "desc",
-            },
-          },
-          _count: {
-            select: {
-              tasks: true,
-              members: true,
-              documents: true,
-              conversations: true,
-            },
-          },
-        },
-      })
-    : null;
+  const selectedWorkspace =
+    selectedWorkspaceId === requestedWorkspaceId
+      ? requestedWorkspace
+      : selectedWorkspaceId
+      ? await getDashboardWorkspace(selectedWorkspaceId)
+      : null;
 
   return (
     <WorkspaceShell
@@ -240,18 +265,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </div>
 
                 <div className="space-y-2.5 max-h-60 overflow-y-auto">
-                  {selectedWorkspace.members.map((member) => (
+                  {(selectedWorkspace.members ?? []).map((member: any) => (
                     <div
-                      key={member.user.id}
+                      key={member.user?.id ?? member.id}
                       className="flex items-center justify-between rounded-xl border border-border/60 bg-background/80 px-3.5 py-2.5"
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs">
-                          {member.user.name ? member.user.name.slice(0, 1).toUpperCase() : "U"}
+                          {member.user?.name ? member.user.name.slice(0, 1).toUpperCase() : "U"}
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-foreground">{member.user.name ?? "User"}</p>
-                          <p className="text-[11px] text-muted-foreground">{member.user.email}</p>
+                          <p className="text-sm font-medium text-foreground">{member.user?.name ?? "User"}</p>
+                          <p className="text-[11px] text-muted-foreground">{member.user?.email}</p>
                         </div>
                       </div>
                       <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -268,7 +293,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   <div>
                     <h2 className="text-base font-semibold text-foreground">Pending Invitations</h2>
                     <p className="text-xs text-muted-foreground">
-                      {selectedWorkspace.invites.length} pending invitation(s)
+                      {(selectedWorkspace.invites ?? []).length} pending invitation(s)
                     </p>
                   </div>
                   <Button variant="outline" size="sm" asChild className="text-xs h-8">
@@ -279,19 +304,19 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </div>
 
                 <div className="space-y-2.5 max-h-60 overflow-y-auto">
-                  {selectedWorkspace.invites.length === 0 ? (
+                  {(selectedWorkspace.invites ?? []).length === 0 ? (
                     <div className="rounded-xl border border-dashed border-border/80 px-4 py-8 text-center text-xs text-muted-foreground">
                       No pending invitations. Invite colleagues using the sidebar.
                     </div>
                   ) : (
-                    selectedWorkspace.invites.map((invite) => (
+                    (selectedWorkspace.invites ?? []).map((invite: any) => (
                       <div
                         key={invite.id}
                         className="flex items-center justify-between rounded-xl border border-border/60 bg-background/80 px-3.5 py-2.5 text-xs"
                       >
                         <p className="font-medium text-foreground">{invite.email}</p>
                         <p className="text-[11px] text-muted-foreground">
-                          Expires {invite.expiresAt.toLocaleDateString()}
+                          Expires {new Date(invite.expiresAt).toLocaleDateString()}
                         </p>
                       </div>
                     ))

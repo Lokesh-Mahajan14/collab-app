@@ -1,8 +1,19 @@
 import { db } from "@/lib/db";
 import bcrypt from "bcrypt";
 import { NextResponse } from "next/server";
+import { authRateLimiter, checkRateLimit } from "@/lib/ratelimit";
 
 export async function POST(req: Request) {
+  const ip = req.headers.get("x-forwarded-for") ?? "127.0.0.1";
+  const rateLimitResult = await checkRateLimit(authRateLimiter, `register:${ip}`);
+
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      { error: "Too many registration attempts. Please wait a minute." },
+      { status: 429 }
+    );
+  }
+
   try {
     const { email, password, name } = await req.json();
 

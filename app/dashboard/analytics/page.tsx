@@ -8,11 +8,41 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getWorkspaceSidebarItems } from "@/lib/workspace";
 
+import { getCached, setCached } from "@/lib/redis";
+
 type AnalyticsPageProps = {
   searchParams?: Promise<{
     workspace?: string;
   }>;
 };
+
+async function getAnalyticsWorkspace(workspaceId: string) {
+  const cacheKey = `analytics:workspace:${workspaceId}`;
+  const cached = await getCached<any>(cacheKey);
+  if (cached) return cached;
+
+  const data = await db.workspace.findUnique({
+    where: { id: workspaceId },
+    include: {
+      members: {
+        include: {
+          user: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+      },
+      tasks: true,
+      conversations: true,
+      documents: true,
+    },
+  });
+
+  if (data) {
+    await setCached(cacheKey, data, 60);
+  }
+
+  return data;
+}
 
 export default async function AnalyticsPage({ searchParams }: AnalyticsPageProps) {
   const session = await getServerSession(authOptions);
@@ -22,36 +52,31 @@ export default async function AnalyticsPage({ searchParams }: AnalyticsPageProps
     redirect("/auth/login");
   }
 
-  const workspaceOptions = await getWorkspaceSidebarItems(session.user.id);
+  const requestedWorkspaceId = resolvedSearchParams?.workspace;
+
+  const [workspaceOptions, requestedWorkspace] = await Promise.all([
+    getWorkspaceSidebarItems(session.user.id),
+    requestedWorkspaceId ? getAnalyticsWorkspace(requestedWorkspaceId) : Promise.resolve(null),
+  ]);
 
   const selectedWorkspaceId =
-    resolvedSearchParams?.workspace && workspaceOptions.some((w) => w.id === resolvedSearchParams.workspace)
-      ? resolvedSearchParams.workspace
+    requestedWorkspaceId && workspaceOptions.some((w) => w.id === requestedWorkspaceId)
+      ? requestedWorkspaceId
       : workspaceOptions[0]?.id;
 
-  const workspace = selectedWorkspaceId
-    ? await db.workspace.findUnique({
-        where: { id: selectedWorkspaceId },
-        include: {
-          members: {
-            include: {
-              user: {
-                select: { id: true, name: true, email: true },
-              },
-            },
-          },
-          tasks: true,
-          conversations: true,
-          documents: true,
-        },
-      })
-    : null;
+  const workspace =
+    selectedWorkspaceId === requestedWorkspaceId
+      ? requestedWorkspace
+      : selectedWorkspaceId
+      ? await getAnalyticsWorkspace(selectedWorkspaceId)
+      : null;
 
-  const totalTasks = workspace?.tasks.length ?? 0;
-  const completedTasks = workspace?.tasks.filter((t) => t.status === "done" || t.status === "completed").length ?? 0;
-  const inProgressTasks = workspace?.tasks.filter((t) => t.status === "in_progress" || t.status === "in-progress").length ?? 0;
-  const todoTasks = workspace?.tasks.filter((t) => t.status === "todo").length ?? 0;
-  const highPriorityTasks = workspace?.tasks.filter((t) => t.priority === "high" || t.priority === "urgent").length ?? 0;
+  const tasks = (workspace?.tasks ?? []) as any[];
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter((t) => t.status === "done" || t.status === "completed").length;
+  const inProgressTasks = tasks.filter((t) => t.status === "in_progress" || t.status === "in-progress").length;
+  const todoTasks = tasks.filter((t) => t.status === "todo").length;
+  const highPriorityTasks = tasks.filter((t) => t.priority === "high" || t.priority === "urgent").length;
 
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
   const memberCount = workspace?.members.length ?? 0;
@@ -245,18 +270,18 @@ export default async function AnalyticsPage({ searchParams }: AnalyticsPageProps
               Team Members ({memberCount})
             </h3>
             <div className="space-y-2 max-h-48 overflow-y-auto">
-              {workspace?.members.map((member) => (
+              {(workspace?.members ?? []).map((member: any) => (
                 <div
                   key={member.id}
                   className="flex items-center justify-between p-2 rounded-xl border border-border/60 bg-background text-xs"
                 >
                   <div className="flex items-center gap-2.5">
                     <div className="w-6 h-6 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-[10px]">
-                      {member.user.name ? member.user.name.slice(0, 1).toUpperCase() : "U"}
+                      {member.user?.name ? member.user.name.slice(0, 1).toUpperCase() : "U"}
                     </div>
                     <div>
-                      <p className="font-medium text-foreground">{member.user.name ?? "User"}</p>
-                      <p className="text-[10px] text-muted-foreground">{member.user.email}</p>
+                      <p className="font-medium text-foreground">{member.user?.name ?? "User"}</p>
+                      <p className="text-[10px] text-muted-foreground">{member.user?.email}</p>
                     </div>
                   </div>
                   <span className="px-2 py-0.5 rounded-md bg-muted text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">

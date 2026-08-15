@@ -36,6 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { CreateWorkspaceDialog } from "@/components/workspace/CreateWorkspaceDialog";
 import { api } from "@/lib/axios";
 import { socket } from "@/lib/socket-client";
 import type { WorkspaceSidebarItem } from "@/lib/workspace";
@@ -103,9 +104,7 @@ export function Sidebar({
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [workspaceName, setWorkspaceName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
   const [sidebarClose, setSidebarClose] = useState(false);
   const [activeWorkspaceIdState, setActiveWorkspaceIdState] = useState<string | undefined>(effectiveWorkspaceId);
@@ -181,33 +180,6 @@ export function Sidebar({
 
   const handleSidebarClose = () => {
     setSidebarClose((prev) => !prev);
-  };
-
-  const handleCreateWorkspace = async () => {
-    if (!workspaceName.trim()) {
-      toast.error("Workspace name is required");
-      return;
-    }
-
-    setIsSaving(true);
-
-    try {
-      const response = await api.post("/workspaces", { name: workspaceName });
-      const createdId = (response.data as { workspace: { id: string } }).workspace.id;
-
-      setWorkspaceName("");
-      setCreateOpen(false);
-      setActiveWorkspaceIdState(createdId);
-      toast.success("Workspace created successfully");
-
-      router.push(`/dashboard?workspace=${createdId}`);
-      router.refresh();
-      setInviteOpen(true);
-    } catch {
-      toast.error("Unable to create workspace. Please try again.");
-    } finally {
-      setIsSaving(false);
-    }
   };
 
   const handleInviteMember = async () => {
@@ -722,44 +694,16 @@ export function Sidebar({
       </Dialog>
 
       {/* Create Workspace Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create Workspace</DialogTitle>
-            <DialogDescription>
-              Set up a dedicated workspace for your team and invite colleagues.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3 py-2">
-            <label htmlFor="workspace-name" className="text-sm font-medium">
-              Workspace name
-            </label>
-            <Input
-              id="workspace-name"
-              placeholder="e.g. Design Team or Alpha Project"
-              value={workspaceName}
-              onChange={(e) => setWorkspaceName(e.target.value)}
-              disabled={isSaving}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleCreateWorkspace();
-                }
-              }}
-            />
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={isSaving}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreateWorkspace} disabled={isSaving}>
-              {isSaving ? "Creating..." : "Create Workspace"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CreateWorkspaceDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onSuccess={(createdId) => {
+          setActiveWorkspaceIdState(createdId);
+          router.push(`/dashboard?workspace=${createdId}`);
+          router.refresh();
+          setInviteOpen(true);
+        }}
+      />
 
       {/* Invite Member Dialog */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>

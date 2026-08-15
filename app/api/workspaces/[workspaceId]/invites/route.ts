@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { sendWorkspaceInviteEmail } from "@/lib/mailer";
 import { inviteMemberSchema } from "@/lib/validators/workspace";
 import { createInviteToken } from "@/lib/workspace";
+import { checkRateLimit, inviteRateLimiter } from "@/lib/ratelimit";
 
 const prisma = db as any;
 
@@ -20,6 +21,15 @@ export async function POST(request: Request, context: RouteContext) {
 
   if (!session?.user?.id || !session.user.email) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
+  // Redis Rate Limiting check
+  const rateLimitResult = await checkRateLimit(inviteRateLimiter, `invites:${session.user.id}`);
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      { message: "Too many invitations sent. Please wait a minute before sending more." },
+      { status: 429 }
+    );
   }
 
   const { workspaceId } = await context.params;

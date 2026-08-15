@@ -1,6 +1,8 @@
 import crypto from "crypto";
+import { cache } from "react";
 
 import { db } from "@/lib/db";
+import { getCached, setCached } from "@/lib/redis";
 
 export type WorkspaceSidebarItem = {
   id: string;
@@ -10,8 +12,13 @@ export type WorkspaceSidebarItem = {
   unreadMessageCount: number;
 };
 
-export async function getWorkspaceSidebarItems(userId: string): Promise<WorkspaceSidebarItem[]> {
-  const memberships = await db.workspaceMember.findMany({
+export const getWorkspaceSidebarItems = cache(
+  async (userId: string): Promise<WorkspaceSidebarItem[]> => {
+    const cacheKey = `user:${userId}:sidebar_items`;
+    const cached = await getCached<WorkspaceSidebarItem[]>(cacheKey);
+    if (cached) return cached;
+
+    const memberships = await db.workspaceMember.findMany({
     where: { userId },
     select: {
       role: true,
@@ -74,22 +81,26 @@ export async function getWorkspaceSidebarItems(userId: string): Promise<Workspac
     }
   }
 
-  return memberships.map((membership) => {
-    const convIds = workspaceConversationMap.get(membership.workspace.id) ?? [];
-    let unreadMessageCount = 0;
-    for (const id of convIds) {
-      unreadMessageCount += unreadCountByConv.get(id) ?? 0;
-    }
+    const items = memberships.map((membership) => {
+      const convIds = workspaceConversationMap.get(membership.workspace.id) ?? [];
+      let unreadMessageCount = 0;
+      for (const id of convIds) {
+        unreadMessageCount += unreadCountByConv.get(id) ?? 0;
+      }
 
-    return {
-      id: membership.workspace.id,
-      name: membership.workspace.name,
-      role: membership.role,
-      memberCount: membership.workspace._count.members,
-      unreadMessageCount,
-    };
-  });
-}
+      return {
+        id: membership.workspace.id,
+        name: membership.workspace.name,
+        role: membership.role,
+        memberCount: membership.workspace._count.members,
+        unreadMessageCount,
+      };
+    });
+
+    await setCached(cacheKey, items, 30);
+    return items;
+  }
+);
 
 export function createWorkspaceSlug(name: string) {
   const base = name

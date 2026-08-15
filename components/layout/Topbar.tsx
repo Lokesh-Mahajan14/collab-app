@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Bell, Search, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SignOutButton } from "@/components/auth/SignOutButton";
+import { CreateWorkspaceDialog } from "@/components/workspace/CreateWorkspaceDialog";
 
 type TopbarProps = {
   workspaceName?: string;
@@ -13,15 +14,7 @@ type TopbarProps = {
 };
 
 export function Topbar({ workspaceName, workspaceId, currentPageTitle }: TopbarProps) {
-  const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  const handleNewClick = () => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("new", "workspace");
-    router.push(`${pathname}?${params.toString()}`);
-  };
 
   const getPageTitle = () => {
     if (currentPageTitle) return currentPageTitle;
@@ -72,10 +65,14 @@ export function Topbar({ workspaceName, workspaceId, currentPageTitle }: TopbarP
         </button>
 
         {/* Create new workspace action */}
-        <Button size="sm" className="gap-1.5 hidden sm:flex text-xs h-8" onClick={handleNewClick}>
-          <Plus className="w-3.5 h-3.5" />
-          New Workspace
-        </Button>
+        <CreateWorkspaceDialog
+          trigger={
+            <Button size="sm" className="gap-1.5 hidden sm:flex text-xs h-8">
+              <Plus className="w-3.5 h-3.5" />
+              New Workspace
+            </Button>
+          }
+        />
 
         {/* Notifications */}
         <Link
